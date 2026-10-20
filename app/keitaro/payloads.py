@@ -15,6 +15,9 @@ import pycountry
 GEO_STREAM_NAME = "Flow 1"
 OFFER_STREAM_NAME = "Flow 2"
 
+# Codes people use that are not ISO 3166-1 alpha-2.
+COUNTRY_ALIASES = {"UK": "GB"}
+
 
 class PayloadError(ValueError):
     pass
@@ -26,7 +29,7 @@ def parse_countries(raw: str) -> list[str]:
     for part in re.split(r"[\s,;]+", raw.strip()):
         if not part:
             continue
-        code = part.upper()
+        code = COUNTRY_ALIASES.get(part.upper(), part.upper())
         if pycountry.countries.get(alpha_2=code) is None:
             raise PayloadError(f"Неизвестный код страны: {part}")
         if code not in codes:
@@ -44,18 +47,37 @@ def make_alias(name: str) -> str:
 
 
 def campaign_payload(
-    *, name: str, alias: str, group_id: int, traffic_source_id: int, domain_id: int
+    *,
+    name: str,
+    alias: str,
+    group_id: int,
+    traffic_source_id: int,
+    domain_id: int,
+    parameters: dict | None = None,
 ) -> dict:
-    return {
+    """Campaign settings as in the reference campaign.
+
+    The admin UI copies the traffic source's parameters (utm_*, sub_id_*) into the campaign
+    when a source is picked; the API does not, so they are passed explicitly.
+    """
+    body = {
         "name": name,
         "alias": alias,
         "type": "position",
         "state": "active",
         "cost_type": "CPC",
+        "cost_value": 0,
+        "cost_currency": "USD",
+        # "Из параметра 'cost'" checkbox on the task screenshot.
+        "cost_auto": True,
+        "uniqueness_method": "ip_ua",
         "group_id": group_id,
         "traffic_source_id": traffic_source_id,
         "domain_id": domain_id,
     }
+    if parameters:
+        body["parameters"] = parameters
+    return body
 
 
 def geo_stream_payload(*, campaign_id: int, countries: list[str], redirect_url: str) -> dict:
@@ -91,10 +113,15 @@ def offer_stream_payload(*, campaign_id: int, offer_id: int) -> dict:
     }
 
 
-def stream_offers_payload(offers: Iterable[tuple[int, int]]) -> dict:
-    """Body for PUT /streams/{id}: Keitaro replaces the stream's offer list with this one."""
+def stream_offers_payload(offers: Iterable[tuple[int, int, str]]) -> dict:
+    """Body for PUT /streams/{id}: Keitaro replaces the stream's offer list with this one.
+
+    Offers are (offer_id, share, state); a switched-off offer must be sent with its state,
+    or the PUT would switch it back on.
+    """
     return {
         "offers": [
-            {"offer_id": offer_id, "share": share, "state": "active"} for offer_id, share in offers
+            {"offer_id": offer_id, "share": share, "state": state}
+            for offer_id, share, state in offers
         ]
     }

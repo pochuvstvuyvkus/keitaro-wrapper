@@ -5,6 +5,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 
 from app.db import Base
+from tests.fake_keitaro import SOURCE_PARAMETERS
 
 
 def shares(stream: dict) -> dict[int, int]:
@@ -31,6 +32,9 @@ def test_create_campaign_sends_campaign_and_two_streams(api, fake):
     assert campaign_body["group_id"] == 4970
     assert campaign_body["traffic_source_id"] == 473
     assert campaign_body["domain_id"] == 4622
+    assert campaign_body["cost_auto"] is True
+    # Copied from the traffic source, as the admin UI does.
+    assert campaign_body["parameters"] == SOURCE_PARAMETERS
     assert geo_body["campaign_id"] == created["id"]
     assert geo_body["filters"][0]["payload"] == ["MX", "AU"]
     assert geo_body["action_payload"] == "https://google.com"
@@ -230,3 +234,107 @@ def test_alembic_migrations_match_models(tmp_path):
         assert columns == set(table.columns.keys()), name
     command.downgrade(cfg, "base")
     engine.dispose()
+
+
+# Regressions found in review
+
+
+def test_remove_and_bring_back_in_one_draft_changes_nothing(api, fake):
+    cid, sid = fake.add_campaign("c", [(3749, 33), (3717, 33), (13972, 34)])
+    api.get(f"/api/campaigns/{cid}")
+    base = f"/api/streams/{sid}"
+    api.post(f"{base}/offers/3749/remove")
+    stream = api.post(f"{base}/offers/3749/restore").json()
+    # Back at its Keitaro place, so the extra 1% stays with the last offer.
+    assert shares(stream) == {3749: 33, 3717: 33, 13972: 34}
+    assert stream["dirty"] is False
+
+
+def test_cancel_restores_keitaro_order(api, fake):
+    cid, sid = fake.add_campaign("c", [(3749, 33), (3717, 33), (13972, 34)])
+    api.get(f"/api/campaigns/{cid}")
+    base = f"/api/streams/{sid}"
+    api.post(f"{base}/offers/3749/remove")
+    api.post(f"{base}/offers", json={"offer_id": 18813})
+    api.post(f"{base}/cancel")
+    # Add and remove the same offer: a net-zero edit leaves the Keitaro state.
+    api.post(f"{base}/offers", json={"offer_id": 18813})
+    stream = api.post(f"{base}/offers/18813/remove").json()
+    assert shares(stream) == {3749: 33, 3717: 33, 13972: 34}
+    assert stream["dirty"] is False
+
+
+def test_offer_re_added_in_keitaro_goes_to_the_end(api, fake):
+    cid, sid = fake.add_campaign("c", [(3749, 50), (3717, 50)])
+    api.get(f"/api/campaigns/{cid}")
+    fake.set_offers(sid, [(3717, 100)])
+    api.post(f"/api/campaigns/{cid}/sync")
+    fake.set_offers(sid, [(3717, 50), (3749, 50)])  # 3749 re-added: new link id, last
+    api.post(f"/api/campaigns/{cid}/sync")
+    stream = api.post(f"/api/streams/{sid}/offers", json={"offer_id": 13972}).json()
+    # 3 offers, the extra 1% goes to the last added: 13972, after 3749.
+    assert shares(stream) == {3717: 33, 3749: 33, 13972: 34}
+    api.post(f"/api/streams/{sid}/offers/13972/remove")
+    stream = api.post(f"/api/streams/{sid}/offers", json={"offer_id": 18813}).json()
+    assert shares(stream)[18813] == 34
+
+
+def test_disabled_offer_is_kept_switched_off(api, fake):
+    cid, sid = fake.add_campaign("c", [(3749, 50), (3717, 50)])
+    fake.set_offers(sid, [(3749, 50), (3717, 50), (13972, 10, "disabled")])
+    stream = offer_stream(api.get(f"/api/campaigns/{cid}").json())
+    assert stream["total"] == 100
+    assert [o["state"] for o in stream["offers"]] == ["active", "active", "disabled"]
+    base = f"/api/streams/{sid}"
+    assert api.post(f"{base}/offers/13972/remove").status_code == 400
+    stream = api.post(f"{base}/offers", json={"offer_id": 18813}).json()
+    assert shares(stream) == {3749: 33, 3717: 33, 18813: 34}
+    assert api.post(f"{base}/push").status_code == 200
+    assert (13972, 10, "disabled") in fake.stream_offers(sid)
+
+
+def test_bring_back_of_offer_gone_from_keitaro_is_checked_on_push(api, fake):
+    cid, sid = fake.add_campaign("c", [(3749, 50), (3717, 50)])
+    api.get(f"/api/campaigns/{cid}")
+    base = f"/api/streams/{sid}"
+    api.post(f"{base}/offers/3717/remove")
+    api.post(f"{base}/push")
+    fake.offers = [o for o in fake.offers if o["id"] != 3717]  # offer deleted in Keitaro
+    api.post(f"/api/campaigns/{cid}/sync")
+    assert api.post(f"{base}/offers/3717/restore").status_code == 200
+    r = api.post(f"{base}/push")
+    assert r.status_code == 400
+    assert "3717" in r.json()["detail"]
+
+
+def test_only_pinned_offers_left_are_unpinned(api, fake):
+    cid, sid = fake.add_campaign("c", [(3749, 30), (3717, 30), (13972, 40)])
+    api.get(f"/api/campaigns/{cid}")
+    base = f"/api/streams/{sid}"
+    api.post(f"{base}/offers/3749/pin", json={"pinned": True})
+    api.post(f"{base}/offers/3717/pin", json={"pinned": True})
+    stream = api.post(f"{base}/offers/13972/remove").json()
+    assert shares(stream) == {3749: 50, 3717: 50}
+    assert not any(o["pinned"] for o in stream["offers"])
+
+
+def test_create_succeeds_when_first_sync_fails(api, fake, monkeypatch):
+    from app.keitaro.client import KeitaroError
+    from app.services import creator
+
+    def broken_sync(*args, **kwargs):
+        raise KeitaroError("Keitaro 500: boom", 500)
+
+    monkeypatch.setattr(creator, "sync_campaign", broken_sync)
+    r = api.post("/api/campaigns", json={"name": "x", "geo": "MX", "offer_id": 18813})
+    assert r.status_code == 201
+    assert len(fake.campaigns) == 1
+    # The editor loads it from Keitaro on first open.
+    monkeypatch.undo()
+    campaign = api.get(f"/api/campaigns/{r.json()['id']}").json()
+    assert shares(offer_stream(campaign)) == {18813: 100}
+
+
+def test_offer_search_limit_is_bounded(api):
+    assert api.get("/api/offers", params={"limit": 0}).status_code == 422
+    assert api.get("/api/offers", params={"limit": 1000}).status_code == 422

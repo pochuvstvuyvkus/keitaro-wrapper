@@ -12,6 +12,7 @@ from app.keitaro import payloads
         ("mx, au;RO", ["MX", "AU", "RO"]),
         ("  MX  MX  ", ["MX"]),
         ("ro\nau", ["RO", "AU"]),
+        ("UK, gb", ["GB"]),
     ],
 )
 def test_parse_countries(raw, expected):
@@ -30,9 +31,15 @@ def test_make_alias():
     assert payloads.make_alias("a") != payloads.make_alias("a")
 
 
-def test_campaign_payload():
+def test_campaign_payload_matches_reference_campaign():
+    params = {"sub_id_1": {"name": "utm_placement", "placeholder": "{{placement}}"}}
     body = payloads.campaign_payload(
-        name="TG test", alias="tg-test-abc123", group_id=4970, traffic_source_id=473, domain_id=4622
+        name="TG test",
+        alias="tg-test-abc123",
+        group_id=4970,
+        traffic_source_id=473,
+        domain_id=4622,
+        parameters=params,
     )
     assert body == {
         "name": "TG test",
@@ -40,10 +47,22 @@ def test_campaign_payload():
         "type": "position",
         "state": "active",
         "cost_type": "CPC",
+        "cost_value": 0,
+        "cost_currency": "USD",
+        "cost_auto": True,
+        "uniqueness_method": "ip_ua",
         "group_id": 4970,
         "traffic_source_id": 473,
         "domain_id": 4622,
+        "parameters": params,
     }
+
+
+def test_campaign_payload_without_source_parameters():
+    body = payloads.campaign_payload(
+        name="x", alias="x-1", group_id=1, traffic_source_id=2, domain_id=3, parameters=None
+    )
+    assert "parameters" not in body
 
 
 def test_geo_stream_payload_matches_reference_flow_1():
@@ -70,9 +89,12 @@ def test_offer_stream_payload_matches_reference_flow_2():
 
 
 def test_stream_offers_payload():
-    assert payloads.stream_offers_payload([(1, 60), (2, 40)]) == {
+    assert payloads.stream_offers_payload(
+        [(1, 60, "active"), (2, 40, "active"), (3, 5, "disabled")]
+    ) == {
         "offers": [
             {"offer_id": 1, "share": 60, "state": "active"},
             {"offer_id": 2, "share": 40, "state": "active"},
+            {"offer_id": 3, "share": 5, "state": "disabled"},
         ]
     }

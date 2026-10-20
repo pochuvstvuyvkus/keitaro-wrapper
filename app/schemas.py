@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_serializer
 
-from app.models import Campaign, Stream
+from app.models import REMOVED, Campaign, Stream
 from app.services import editor
 
 
@@ -84,7 +84,7 @@ class StreamOut(BaseModel):
                     pinned=r.pinned,
                     state=r.state,
                     changed=(r.active and r.share != r.kt_share)
-                    or (not r.active and r.kt_share is not None),
+                    or (r.state == REMOVED and r.kt_share is not None),
                 )
                 for r in rows
             ],

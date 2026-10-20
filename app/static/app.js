@@ -96,9 +96,12 @@ function offerAutocomplete({ placeholder, onPick, exclude = () => new Set() }) {
     list.hidden = false;
   }
 
+  let requestNo = 0;
   const search = debounce(async () => {
+    const mine = ++requestNo;
     try {
-      const found = await api("GET", `/api/offers?q=${encodeURIComponent(input.value)}`);
+      const found = await api("GET", `/api/offers?q=${encodeURIComponent(input.value)}&limit=50`);
+      if (mine !== requestNo) return; // a newer search has started
       const skip = exclude();
       items = found.filter((o) => !skip.has(o.id));
       active = items.length ? 0 : -1;
@@ -152,6 +155,10 @@ function offerAutocomplete({ placeholder, onPick, exclude = () => new Set() }) {
     },
   };
 }
+
+// Each navigation gets a number; async pages render only if still current.
+let routeNo = 0;
+const isCurrent = (no) => no === routeNo;
 
 // ---------- page: new campaign ----------
 
@@ -218,7 +225,7 @@ function pageNew() {
 
 // ---------- page: campaign list ----------
 
-async function pageCampaigns() {
+async function pageCampaigns(no) {
   const search = h("input", { type: "search", placeholder: "поиск по названию, id или alias" });
   const body = h("tbody");
   const table = h(
@@ -262,34 +269,38 @@ async function pageCampaigns() {
   body.append(h("tr", {}, h("td", { colspan: 4, class: "muted" }, "Загрузка…")));
   try {
     all = await api("GET", "/api/campaigns");
+    if (!isCurrent(no)) return;
     render();
   } catch (err) {
-    body.replaceChildren(h("tr", {}, h("td", { colspan: 4, class: "error" }, err.message)));
+    if (isCurrent(no)) body.replaceChildren(h("tr", {}, h("td", { colspan: 4, class: "error" }, err.message)));
   }
 }
 
 // ---------- page: campaign editor ----------
 
-async function pageCampaign(id) {
+async function pageCampaign(id, no) {
   view.replaceChildren(h("p", { class: "muted" }, "Загрузка кампании…"));
   let campaign;
   try {
     campaign = await api("GET", `/api/campaigns/${id}`);
   } catch (err) {
-    view.replaceChildren(h("p", { class: "error" }, err.message));
+    if (isCurrent(no)) view.replaceChildren(h("p", { class: "error" }, err.message));
     return;
   }
-  renderCampaign(campaign);
+  if (isCurrent(no)) renderCampaign(campaign, no);
 }
 
-function renderCampaign(campaign) {
+function renderCampaign(campaign, no) {
   const fetchBtn = h("button", {}, "Загрузить из Keitaro");
-  fetchBtn.addEventListener("click", () =>
+  fetchBtn.addEventListener("click", () => {
+    if (campaign.streams.some((s) => s.dirty) && !confirm("Несохранённый черновик будет потерян. Загрузить?")) return;
     busy(fetchBtn, async () => {
-      renderCampaign(await api("POST", `/api/campaigns/${campaign.id}/sync`));
+      const fresh = await api("POST", `/api/campaigns/${campaign.id}/sync`);
+      if (!isCurrent(no)) return;
+      renderCampaign(fresh, no);
       toast("Состояние загружено из Keitaro");
-    }),
-  );
+    });
+  });
 
   const streamsBox = h("div");
   const update = (stream) => {
@@ -308,7 +319,7 @@ function renderCampaign(campaign) {
       "div",
       { class: "toolbar" },
       fetchBtn,
-      h("a", { href: campaign.admin_url, target: "_blank", rel: "noopener" }, h("button", {}, "Открыть в Keitaro")),
+      h("a", { class: "button", href: campaign.admin_url, target: "_blank", rel: "noopener" }, "Открыть в Keitaro"),
       h("span", { class: "grow" }),
       h("span", { class: "muted" }, campaign.synced_at ? `Загружено: ${new Date(campaign.synced_at).toLocaleString()}` : ""),
     ),
@@ -324,8 +335,19 @@ function describeFilters(stream) {
 }
 
 function renderStream(stream, update) {
+  let section;
+  const lock = (on) => section && section.querySelectorAll("button, input").forEach((el) => (el.disabled = on));
   const call = (button, method, path, body) =>
-    busy(button, async () => update(await api(method, `/api/streams/${stream.id}${path}`, body)));
+    busy(button, async () => {
+      lock(true);
+      try {
+        const fresh = await api(method, `/api/streams/${stream.id}${path}`, body);
+        update(fresh);
+        return fresh;
+      } finally {
+        lock(false);
+      }
+    });
 
   const head = h(
     "div",
@@ -348,44 +370,46 @@ function renderStream(stream, update) {
     const push = h("button", { class: "primary" }, "Отправить в Keitaro");
     const cancel = h("button", {}, "Отменить");
     push.addEventListener("click", () =>
-      busy(push, async () => {
-        update(await api("POST", `/api/streams/${stream.id}/push`));
-        toast("Изменения отправлены в Keitaro");
-      }),
+      call(push, "POST", "/push").then((fresh) => fresh && toast("Изменения отправлены в Keitaro")),
     );
     cancel.addEventListener("click", () => call(cancel, "POST", "/cancel"));
     head.append(h("span", { class: "muted" }, "черновик"), push, cancel);
   }
 
   const rows = stream.offers.map((offer) => {
-    const removed = offer.state !== "active";
+    const removed = offer.state === "removed";
+    const disabled = offer.state === "disabled";
+    const inactive = removed || disabled;
     const shareBtn = h("button", { class: "link", title: "Задать долю вручную (оффер закрепится)" }, `${offer.share}%`);
     shareBtn.addEventListener("click", () => {
-      if (removed) return;
+      if (inactive) return;
       const value = prompt(`Доля для оффера #${offer.offer_id}, %`, offer.share);
       if (value === null) return;
-      const share = Number.parseInt(value, 10);
-      if (Number.isNaN(share)) return toast("Нужно целое число", true);
+      const share = Number(value.trim());
+      if (!Number.isInteger(share) || share < 0 || share > 100) return toast("Нужно целое число от 0 до 100", true);
       call(shareBtn, "POST", `/offers/${offer.offer_id}/share`, { share });
     });
     const pin = h(
       "button",
-      { class: offer.pinned ? "pin on" : "pin", title: offer.pinned ? "Открепить долю" : "Закрепить долю", disabled: removed },
+      { class: offer.pinned ? "pin on" : "pin", title: offer.pinned ? "Открепить долю" : "Закрепить долю", disabled: inactive },
       "📌",
     );
     pin.addEventListener("click", () => call(pin, "POST", `/offers/${offer.offer_id}/pin`, { pinned: !offer.pinned }));
 
-    const action = removed
-      ? h("button", {}, "↺ Вернуть")
-      : h("button", { class: "danger" }, "Удалить");
-    action.addEventListener("click", () =>
-      call(action, "POST", `/offers/${offer.offer_id}/${removed ? "restore" : "remove"}`),
-    );
+    let action;
+    if (disabled) {
+      action = h("span", { class: "muted", title: "Включите оффер в самом Keitaro" }, "выключен в Keitaro");
+    } else {
+      action = removed ? h("button", {}, "↺ Вернуть") : h("button", { class: "danger" }, "Удалить");
+      action.addEventListener("click", () =>
+        call(action, "POST", `/offers/${offer.offer_id}/${removed ? "restore" : "remove"}`),
+      );
+    }
 
     const was = offer.changed && offer.kt_share !== null ? h("span", { class: "changed" }, `было ${offer.kt_share}%`) : null;
     return h(
       "tr",
-      { class: removed ? "removed" : "" },
+      { class: removed ? "removed" : disabled ? "disabled" : "" },
       h("td", {}, h("span", { class: "muted" }, `#${offer.offer_id} `), h("span", { class: "name" }, offer.name)),
       h("td", { class: "share" }, shareBtn, pin, was),
       h("td", { class: "actions" }, action),
@@ -424,19 +448,21 @@ function renderStream(stream, update) {
     totalOk ? null : recount,
   );
 
-  return h("section", { class: stream.dirty ? "panel stream dirty" : "panel stream" }, head, table, foot);
+  section = h("section", { class: stream.dirty ? "panel stream dirty" : "panel stream" }, head, table, foot);
+  return section;
 }
 
 // ---------- router ----------
 
 function route() {
+  const no = ++routeNo;
   const hash = location.hash || "#/new";
   document.querySelectorAll("[data-nav]").forEach((a) => {
     a.classList.toggle("active", hash.startsWith(`#/${a.dataset.nav}`));
   });
   const match = hash.match(/^#\/campaigns\/(\d+)/);
-  if (match) return pageCampaign(match[1]);
-  if (hash.startsWith("#/campaigns")) return pageCampaigns();
+  if (match) return pageCampaign(match[1], no);
+  if (hash.startsWith("#/campaigns")) return pageCampaigns(no);
   return pageNew();
 }
 

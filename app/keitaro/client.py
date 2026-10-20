@@ -83,6 +83,9 @@ class KeitaroClient:
     def list_traffic_sources(self) -> list[dict]:
         return self._request("GET", "/traffic_sources")
 
+    def get_traffic_source(self, source_id: int) -> dict:
+        return self._request("GET", f"/traffic_sources/{source_id}")
+
 
 def _error_text(response: httpx.Response) -> str:
     try:

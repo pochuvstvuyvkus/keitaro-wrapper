@@ -80,6 +80,16 @@ button:disabled { opacity: .5; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button.primary:hover { background: #2760c4; }
 button.danger { color: var(--danger); }
+a.button {
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid #c9ced5;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  text-decoration: none;
+}
+a.button:hover { background: #f0f2f5; }
 button.link { border: none; background: none; padding: 0; color: var(--accent); }
 button.pin { border: none; background: none; padding: 0 4px; opacity: .35; }
 button.pin.on { opacity: 1; }
@@ -132,6 +142,8 @@ th { font-size: 12px; color: var(--muted); font-weight: 600; }
 .stream table td.actions { width: 120px; text-align: right; }
 .stream tr.removed td { color: var(--removed); }
 .stream tr.removed .name::after { content: " (удалён)"; }
+.stream tr.disabled td { color: var(--removed); }
+.stream tr.disabled .name::after { content: " (выключен в Keitaro)"; }
 .stream-foot {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 12px 16px; border-top: 1px solid var(--line);
@@ -153,3 +165,4 @@ th { font-size: 12px; color: var(--muted); font-weight: 600; }
   .form .hint, .form .actions { grid-column: 1; }
   .topbar .meta { margin-left: 0; }
 }
+.stream tr.removed button.link, .stream tr.disabled button.link { color: var(--removed); cursor: default; }

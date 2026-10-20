@@ -9,6 +9,11 @@ import json
 
 import httpx
 
+SOURCE_PARAMETERS = {
+    "sub_id_1": {"name": "utm_placement", "placeholder": "{{placement}}", "alias": "Placement"},
+    "source": {"name": "utm_source", "placeholder": "{{site_source_name}}"},
+}
+
 
 class FakeKeitaro:
     def __init__(self, offers: list[dict] | None = None):
@@ -62,11 +67,21 @@ class FakeKeitaro:
         )["id"]
         return cid, sid
 
-    def set_offers(self, stream_id: int, offers: list[tuple[int, int]]) -> None:
-        """Change the stream directly, as someone editing it in the Keitaro admin."""
+    def set_offers(self, stream_id: int, offers: list[tuple]) -> None:
+        """Change the stream directly, as someone editing it in the Keitaro admin.
+
+        Items are (offer_id, share) or (offer_id, share, state).
+        """
         self._replace_offers(
-            self.streams[stream_id], [{"offer_id": o, "share": s} for o, s in offers]
+            self.streams[stream_id],
+            [
+                {"offer_id": o[0], "share": o[1], "state": o[2] if len(o) > 2 else "active"}
+                for o in offers
+            ],
         )
+
+    def stream_offers(self, stream_id: int) -> list[tuple[int, int, str]]:
+        return [(o["offer_id"], o["share"], o["state"]) for o in self.streams[stream_id]["offers"]]
 
     # transport
 
@@ -83,6 +98,8 @@ class FakeKeitaro:
             return self._json(self.offers)
         if parts == ["groups"]:
             return self._json([{"id": 4970, "name": "FORTESTS", "type": "campaigns"}])
+        if parts == ["traffic_sources", "473"]:
+            return self._json({"id": 473, "name": "FORTESTS", "parameters": SOURCE_PARAMETERS})
         if parts == ["traffic_sources"]:
             return self._json([{"id": 473, "name": "FORTESTS"}])
         if parts == ["campaigns"] and method == "GET":

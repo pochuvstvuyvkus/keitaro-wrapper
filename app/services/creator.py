@@ -46,12 +46,14 @@ def create_campaign(
     if not any(o.id == offer_id and o.state == "active" for o in offers):
         raise CreateError(f"Оффер {offer_id} не найден среди активных офферов Keitaro")
 
+    source = client.get_traffic_source(settings.keitaro_traffic_source_id)
     campaign_body = payloads.campaign_payload(
         name=name,
         alias=payloads.make_alias(name),
         group_id=settings.keitaro_group_id,
         traffic_source_id=settings.keitaro_traffic_source_id,
         domain_id=settings.keitaro_domain_id,
+        parameters=source.get("parameters") or None,
     )
     created = client.create_campaign(campaign_body)
     campaign_id = created["id"]
@@ -72,7 +74,10 @@ def create_campaign(
         raise
 
     campaign = Campaign(
-        id=campaign_id, name=created["name"], alias=created["alias"], created_here=True
+        id=campaign_id,
+        name=created.get("name") or name,
+        alias=created.get("alias") or campaign_body["alias"],
+        created_here=True,
     )
     db.add(campaign)
     db.add(
@@ -83,5 +88,10 @@ def create_campaign(
         )
     )
     db.commit()
-    sync_campaign(db, client, campaign_id)
+    try:
+        sync_campaign(db, client, campaign_id)
+    except KeitaroError:
+        # The campaign exists; the editor loads it from Keitaro when it is opened.
+        log.warning("campaign %s created, first sync failed", campaign_id, exc_info=True)
+        db.rollback()
     return CreatedCampaign(campaign=campaign, countries=countries)

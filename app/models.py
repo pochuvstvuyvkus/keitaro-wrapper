@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -22,6 +23,8 @@ from app.db import Base
 
 ACTIVE = "active"
 REMOVED = "removed"
+# Switched off in Keitaro: kept as is, not edited and not counted in the 100%.
+DISABLED = "disabled"
 
 
 def utcnow() -> datetime:
@@ -56,7 +59,7 @@ class Stream(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     schema: Mapped[str] = mapped_column(String(32))
     action_type: Mapped[str | None] = mapped_column(String(64))
-    action_payload: Mapped[str | None] = mapped_column(String(2048))
+    action_payload: Mapped[str | None] = mapped_column(Text)
     state: Mapped[str] = mapped_column(String(32), default="active")
     filters: Mapped[list] = mapped_column(JSON, default=list)
 
@@ -88,6 +91,8 @@ class StreamOffer(Base):
     kt_share: Mapped[int | None] = mapped_column(Integer)
     # The offer has been in this stream in Keitaro at some point (a removed row is kept).
     synced: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Id of the stream-offer link in Keitaro; it grows in the order offers were added there.
+    kt_link_id: Mapped[int | None] = mapped_column(Integer)
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

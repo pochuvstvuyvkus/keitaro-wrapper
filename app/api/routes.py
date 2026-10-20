@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from app.api.deps import DbSession, KeitaroDep, SettingsDep
 from app.models import Campaign
@@ -44,7 +46,7 @@ def offers(
     settings: SettingsDep,
     client: KeitaroDep,
     q: str = "",
-    limit: int = 20,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
     refresh: bool = False,
 ):
     rows = cached_offers(db, client, settings.offers_cache_ttl, force=refresh)
@@ -167,9 +169,7 @@ def cancel(stream_id: int, db: DbSession):
 
 
 @router.post("/streams/{stream_id}/push", response_model=StreamOut)
-def push(
-    stream_id: int,
-    db: DbSession,
-    client: KeitaroDep,
-):
+def push(stream_id: int, db: DbSession, settings: SettingsDep, client: KeitaroDep):
+    # Offers added in the draft are checked against a fresh list.
+    cached_offers(db, client, settings.offers_cache_ttl, force=True)
     return StreamOut.build(editor.push_stream(db, client, stream_id))

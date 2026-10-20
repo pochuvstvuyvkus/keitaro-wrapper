@@ -1,7 +1,10 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -13,7 +16,7 @@ class Settings(BaseSettings):
     """Settings are read from the environment, then from .env.local and .env."""
 
     model_config = SettingsConfigDict(
-        env_file=(".env", ".env.local"),
+        env_file=(PROJECT_DIR / ".env", PROJECT_DIR / ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -31,7 +34,8 @@ class Settings(BaseSettings):
 
     geo_redirect_url: str = "https://google.com"
 
-    database_url: str = "sqlite:///./adrobot.db"
+    # Absolute path, so the app and Alembic find the same file from any working directory.
+    database_url: str = f"sqlite:///{PROJECT_DIR / 'adrobot.db'}"
     offers_cache_ttl: int = 300
 
     @property

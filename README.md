@@ -28,7 +28,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-Без uv: `python -m venv .venv && . .venv/bin/activate && pip install fastapi "uvicorn[standard]" sqlalchemy alembic httpx pydantic-settings pycountry pytest`, дальше те же команды без `uv run`.
+Без uv: `python -m venv .venv && . .venv/bin/activate && pip install fastapi "uvicorn[standard]" sqlalchemy alembic httpx pydantic-settings pycountry pytest ruff`, дальше те же команды без `uv run`.
 
 ## Настройка (.env)
 
@@ -41,7 +41,7 @@ uv run ruff check .
 | `KEITARO_TRAFFIC_SOURCE_ID` | `473` | источник (FORTESTS) |
 | `KEITARO_DOMAIN_ID` | `4622` | домен (in.posdk.xyz, как у эталонной кампании) |
 | `GEO_REDIRECT_URL` | `https://google.com` | куда поток 1 редиректит выбранные страны |
-| `DATABASE_URL` | `sqlite:///./adrobot.db` | любая БД SQLAlchemy, например `postgresql+psycopg://user:pass@localhost/adrobot` (нужен драйвер `psycopg`) |
+| `DATABASE_URL` | `adrobot.db` в папке проекта | любая БД SQLAlchemy, например `postgresql+psycopg://user:pass@localhost/adrobot` (нужен драйвер `psycopg`) |
 | `OFFERS_CACHE_TTL` | `300` | сколько секунд кешировать список офферов для автокомплита |
 
 Настройки читаются из переменных окружения, `.env` и `.env.local`. Оба файла в `.gitignore`.
@@ -55,13 +55,20 @@ Id группы и источника видны в API: `GET /admin_api/v1/grou
 Структура повторяет эталонную кампанию 93212 (скриншот в ТЗ):
 
 ```
-POST /campaigns  {name, alias, type: position, group_id, traffic_source_id, domain_id, cost_type: CPC}
+POST /campaigns  {name, alias, type: position, group_id, traffic_source_id, domain_id,
+                 cost_type: CPC, cost_auto: true, uniqueness_method: ip_ua,
+                 parameters: <параметры источника>}
 POST /streams    Flow 1: regular, position 1, schema redirect, action http → https://google.com,
                  filters [{name: country, mode: accept, payload: ["MX", "AU"]}]
 POST /streams    Flow 2: regular, position 2, schema landings, offers [{offer_id, share: 100}]
 ```
 
-Geo принимает один или несколько кодов ISO 3166-1 (`MX`, `mx, au; RO`); неизвестные коды отклоняются.
+Параметры кампании (utm_source, sub_id_1 = utm_placement и т.д.) копируются из источника FORTESTS:
+админка Keitaro делает это сама при выборе источника, а API нет. У эталонной кампании они совпадают
+с параметрами источника один в один. Галочка «Из параметра 'cost'» со скриншота — это `cost_auto`.
+
+Geo принимает один или несколько кодов ISO 3166-1 (`MX`, `mx, au; RO`, `UK` как `GB`); неизвестные
+коды отклоняются.
 Оффер проверяется по списку активных офферов Keitaro. Если поток создать не удалось, кампания удаляется
 (в архив Keitaro), чтобы не оставлять половину.
 
@@ -76,6 +83,7 @@ Geo принимает один или несколько кодов ISO 3166-1 
   **Вернуть**; вернувшийся встаёт в конец (как и в Keitaro). Пример из видео: закреплён 25%,
   вернули оффер → 38 / 37 / 25.
 - Клик по доле задаёт её вручную, оффер при этом закрепляется, остальные пересчитываются.
+- Удалённый и тут же возвращённый в одном черновике оффер встаёт на своё место, доли не меняются.
 - Изменения — черновик (жёлтый фон, «было N%»). **Отправить в Keitaro** шлёт
   `PUT /streams/{id}` с полным списком офферов, **Отменить** возвращает состояние Keitaro.
 - **Загрузить из Keitaro** подтягивает фактическое состояние. Офферы, которые удалили прямо в Keitaro,
@@ -113,6 +121,7 @@ REST API:
 
 | Метод | Путь | |
 |---|---|---|
+| GET | `/api/meta` | группа, источник и домен для новых кампаний |
 | GET | `/api/offers?q=` | поиск офферов (id или название) |
 | POST | `/api/campaigns` | создать кампанию `{name, geo, offer_id}` |
 | GET | `/api/campaigns?q=` | список кампаний Keitaro |
@@ -126,6 +135,8 @@ REST API:
 
 ## Ограничения
 
-- Офферы со статусом `disabled` внутри потока Keitaro редактор считает активными; при отправке
-  уходят только активные офферы черновика.
+- Офферы, выключенные в самом Keitaro (`state: disabled`), редактор показывает, но не меняет:
+  они не входят в 100% и отправляются обратно выключенными.
+- Права тестового API-ключа ограничены: `/offers` отдаёт только часть офферов. Офферы, которые
+  уже стоят в потоке, но не видны ключу, показываются по id и сохраняются при отправке.
 - Однопользовательский режим: черновик один на поток, без авторизации.
