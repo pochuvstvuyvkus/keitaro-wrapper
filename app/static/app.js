@@ -262,6 +262,7 @@ function createCombo({ root, control, input, load, renderOption, onSelect, empty
   let active = -1;
   let requestNo = 0;
   let menu = null;
+  let dismissed = false; // closed with Esc: stay closed until the user types again
   const listId = `combo-${Math.random().toString(36).slice(2, 8)}`;
   input.setAttribute("role", "combobox");
   input.setAttribute("aria-autocomplete", "list");
@@ -269,6 +270,7 @@ function createCombo({ root, control, input, load, renderOption, onSelect, empty
   input.setAttribute("aria-expanded", "false");
 
   function close() {
+    requestNo++; // drop searches still in flight
     menu?.remove();
     menu = null;
     root.classList.remove("open");
@@ -321,13 +323,17 @@ function createCombo({ root, control, input, load, renderOption, onSelect, empty
   }
 
   async function refresh() {
+    if (document.activeElement !== input || dismissed) return;
     const mine = ++requestNo;
     const slow = setTimeout(() => {
-      if (mine === requestNo) showMenu([h("li", { class: "menu-note" }, h("span", { class: "spinner" }), "Ищу…")]);
+      if (mine === requestNo && document.activeElement === input) {
+        showMenu([h("li", { class: "menu-note" }, h("span", { class: "spinner" }), "Ищу…")]);
+      }
     }, 150);
     try {
       const found = await load(input.value.trim());
-      if (mine !== requestNo || document.activeElement !== input) return;
+      if (mine !== requestNo) return;
+      if (document.activeElement !== input) return close();
       items = found;
       active = items.length ? 0 : -1;
       render();
@@ -348,16 +354,21 @@ function createCombo({ root, control, input, load, renderOption, onSelect, empty
   const refreshSoon = debounce(refresh, 180);
   input.addEventListener("focus", () => {
     control.classList.add("focused");
+    dismissed = false;
     refresh();
   });
   input.addEventListener("blur", () => {
     control.classList.remove("focused");
     close();
   });
-  input.addEventListener("input", refreshSoon);
+  input.addEventListener("input", () => {
+    dismissed = false;
+    refreshSoon();
+  });
   input.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
+      dismissed = false;
       if (!menu) return refresh();
       if (!items.length) return;
       active = (active + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
@@ -366,8 +377,9 @@ function createCombo({ root, control, input, load, renderOption, onSelect, empty
       // Enter in a dropdown never submits the surrounding form.
       e.preventDefault();
       if (menu && active >= 0) pick(active);
-    } else if (e.key === "Escape" && menu) {
-      e.stopPropagation();
+    } else if (e.key === "Escape") {
+      if (menu) e.stopPropagation();
+      dismissed = true;
       close();
     }
   });

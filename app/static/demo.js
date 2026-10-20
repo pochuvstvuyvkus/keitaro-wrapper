@@ -453,8 +453,8 @@
       const banner = document.createElement("div");
       banner.className = "demo-banner";
       banner.innerHTML =
-        '<span><strong>Демо-версия.</strong> Офферы и кампании тестовые, запросы в Keitaro не уходят: сервер имитируется в браузере. ' +
-        'Код и запуск с настоящим Keitaro: <a href="https://github.com/pochuvstvuyvkus/keitaro-wrapper" target="_blank" rel="noopener">GitHub</a>.</span>';
+        '<span><strong>Демо:</strong> тестовые данные, в Keitaro ничего не уходит. ' +
+        '<a href="https://github.com/pochuvstvuyvkus/keitaro-wrapper" target="_blank" rel="noopener">Код и запуск с Keitaro</a></span>';
       banner.append(reset);
       document.body.prepend(banner);
     });
