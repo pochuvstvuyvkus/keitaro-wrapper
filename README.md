@@ -8,6 +8,11 @@
 2. **Редактор кампании.** Добавление, удаление и возврат офферов в потоке с пересчётом долей,
    как в эталонном редакторе из видео: изменения копятся черновиком и уходят в Keitaro по кнопке.
 
+**Демо:** https://pochuvstvuyvkus.github.io/keitaro-wrapper/ — тот же интерфейс на GitHub Pages.
+Сервер там имитируется в браузере на тестовых офферах (`app/static/demo.js`), в Keitaro ничего не
+уходит. Логика долей в демо сверяется с Python-версией тестом `tests/test_demo_parity.py`.
+Демо собирается `scripts/build_demo.py` и публикуется GitHub Actions при каждом push в `main`.
+
 ## Быстрый старт
 
 Нужен Python 3.12+ и [uv](https://docs.astral.sh/uv/).
@@ -122,7 +127,9 @@ app/
   services/editor.py    черновик потока: add / remove / restore / pin / push / cancel / sync
   services/creator.py   создание кампании
   api/routes.py         REST API (/api/...)
-  static/               фронт: HTML + vanilla JS, без сборки
+  static/               фронт: HTML + vanilla JS, без сборки; demo.js — бэкенд для демо
+scripts/build_demo.py   сборка демо для GitHub Pages
+.github/workflows/      тесты и публикация демо
 alembic/                миграции
 tests/                  pytest; Keitaro подменён in-memory фейком через httpx.MockTransport
 ```

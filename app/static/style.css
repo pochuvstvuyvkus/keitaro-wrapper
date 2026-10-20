@@ -408,6 +408,19 @@ h2 { font-size: 15px; margin: 0; font-weight: 650; }
 .share-input .num input { padding-right: 28px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .share-input .num span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }
 
+/* ---------- demo build ---------- */
+
+.demo-banner {
+  display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+  padding: 8px 16px; background: #312e81; color: #e0e7ff; font-size: 13px; text-align: center;
+}
+.demo-banner a { color: #fff; text-decoration: underline; }
+.demo-reset {
+  height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .35);
+  background: transparent; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+.demo-reset:hover { background: rgba(255, 255, 255, .12); }
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 860px) {

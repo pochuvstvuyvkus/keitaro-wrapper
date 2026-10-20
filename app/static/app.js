@@ -54,6 +54,8 @@ function icon(name) {
 }
 
 async function api(method, path, body) {
+  // GitHub Pages build: demo.js answers instead of the server.
+  if (window.KW_DEMO_API) return window.KW_DEMO_API(method, path, body);
   let response;
   try {
     response = await fetch(path, {
@@ -717,7 +719,7 @@ function pageNew() {
             "div",
             { class: "actions-row" },
             h("a", { class: "btn btn-primary", href: `#/campaigns/${created.id}` }, icon("layers"), "Открыть в редакторе"),
-            h("a", { class: "btn", href: created.admin_url, target: "_blank", rel: "noopener" }, icon("external"), "Открыть в Keitaro"),
+            created.admin_url ? h("a", { class: "btn", href: created.admin_url, target: "_blank", rel: "noopener" }, icon("external"), "Открыть в Keitaro") : null,
           ),
         ),
       ),
@@ -881,7 +883,7 @@ function renderCampaign(campaign, no) {
           synced ? h("span", {}, `загружено ${synced}`) : null,
         ),
       ),
-      h("div", { class: "actions-row", style: "margin-top:0" }, fetchBtn, h("a", { class: "btn", href: campaign.admin_url, target: "_blank", rel: "noopener" }, icon("external"), "Открыть в Keitaro")),
+      h("div", { class: "actions-row", style: "margin-top:0" }, fetchBtn, campaign.admin_url ? h("a", { class: "btn", href: campaign.admin_url, target: "_blank", rel: "noopener" }, icon("external"), "Открыть в Keitaro") : null),
     ),
     streamsBox,
   );
