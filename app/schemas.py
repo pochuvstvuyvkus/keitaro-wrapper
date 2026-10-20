@@ -12,6 +12,12 @@ class OfferOut(BaseModel):
     countries: list[str] = []
 
 
+class CountryOut(BaseModel):
+    code: str
+    name: str
+    name_en: str
+
+
 class CampaignCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     geo: str = Field(min_length=2, description="Country codes, e.g. 'MX' or 'MX, AU'")

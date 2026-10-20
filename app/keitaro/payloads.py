@@ -5,10 +5,12 @@ streams, the first redirects visitors from the given countries, the second sends
 else to the offers.
 """
 
+import gettext
 import re
 import secrets
 import unicodedata
 from collections.abc import Iterable
+from functools import lru_cache
 
 import pycountry
 
@@ -37,6 +39,20 @@ def parse_countries(raw: str) -> list[str]:
     if not codes:
         raise PayloadError("Укажите хотя бы одну страну, например MX")
     return codes
+
+
+@lru_cache
+def country_list() -> list[dict]:
+    """ISO countries with Russian names, for the Geo picker."""
+    try:
+        ru = gettext.translation("iso3166-1", pycountry.LOCALES_DIR, languages=["ru"])
+    except OSError:
+        ru = gettext.NullTranslations()
+    items = [
+        {"code": c.alpha_2, "name": ru.gettext(c.name), "name_en": c.name}
+        for c in pycountry.countries
+    ]
+    return sorted(items, key=lambda c: c["name"])
 
 
 def make_alias(name: str) -> str:

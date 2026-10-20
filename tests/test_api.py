@@ -338,3 +338,10 @@ def test_create_succeeds_when_first_sync_fails(api, fake, monkeypatch):
 def test_offer_search_limit_is_bounded(api):
     assert api.get("/api/offers", params={"limit": 0}).status_code == 422
     assert api.get("/api/offers", params={"limit": 1000}).status_code == 422
+
+
+def test_countries(api):
+    items = {c["code"]: c for c in api.get("/api/countries").json()}
+    assert len(items) > 240
+    assert items["MX"]["name"] == "Мексика"
+    assert items["MX"]["name_en"] == "Mexico"

@@ -3,12 +3,14 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from app.api.deps import DbSession, KeitaroDep, SettingsDep
+from app.keitaro.payloads import country_list
 from app.models import Campaign
 from app.schemas import (
     CampaignCreate,
     CampaignCreated,
     CampaignListItem,
     CampaignOut,
+    CountryOut,
     MetaOut,
     OfferOut,
     OfferRef,
@@ -38,6 +40,11 @@ def meta(
         domain_id=settings.keitaro_domain_id,
         geo_redirect_url=settings.geo_redirect_url,
     )
+
+
+@router.get("/countries", response_model=list[CountryOut])
+def countries():
+    return country_list()
 
 
 @router.get("/offers", response_model=list[OfferOut])
